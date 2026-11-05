@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, CheckCircle, Clock, Calendar, Plus, X, Settings, LogOut } from 'lucide-react';
+import { BookOpen, CheckCircle, Clock, Calendar, Plus, X, LogOut } from 'lucide-react';
 import { db, auth } from '../firebase';
-import { collection, query, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+// Import doc dan updateDoc buat fitur checklist
+import { collection, query, getDocs, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
@@ -10,9 +11,12 @@ export default function Dashboard() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const navigate = useNavigate();
   
+  // State buat form
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDate, setNewTaskDate] = useState('');
+  
+  const navigate = useNavigate();
   const userName = localStorage.getItem("userName") || "Siswa";
 
   const handleLogout = async () => {
@@ -21,6 +25,7 @@ export default function Dashboard() {
     navigate('/login');
   };
 
+  // Fungsi narik data
   const fetchTasks = async () => {
     try {
       const q = query(collection(db, "tasks"));
@@ -41,6 +46,7 @@ export default function Dashboard() {
     fetchTasks();
   }, []);
 
+  // Fungsi nambah tugas
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
@@ -48,23 +54,37 @@ export default function Dashboard() {
     try {
       await addDoc(collection(db, "tasks"), {
         title: newTaskTitle,
-        status: 'pending',
+        dueDate: newTaskDate,
+        status: 'pending', // Default selalu pending
         createdAt: serverTimestamp(),
         userId: auth.currentUser?.uid
       });
       setNewTaskTitle('');
+      setNewTaskDate('');
       setIsModalOpen(false);
-      fetchTasks();
+      fetchTasks(); // Refresh data
     } catch (error) {
       console.error("Gagal nambah tugas:", error);
     }
   };
 
+  // Fungsi buat nandain selesai/belum
+  const handleToggleStatus = async (taskId, currentStatus) => {
+    try {
+      const taskRef = doc(db, "tasks", taskId);
+      await updateDoc(taskRef, {
+        status: currentStatus === 'pending' ? 'completed' : 'pending'
+      });
+      fetchTasks(); // Refresh data biar langsung berubah di layar
+    } catch (error) {
+      console.error("Gagal update status:", error);
+    }
+  };
+
   return (
-    // Background abu-abu sangat terang, khas aplikasi mobile
     <div className="min-h-screen bg-[#F8F9FA] text-slate-800 font-sans pb-24">
       
-      {/* Top Bar */}
+      {/* Header */}
       <div className="px-6 pt-8 pb-4 flex justify-between items-center bg-[#F8F9FA]">
         <div>
           <p className="text-slate-500 text-sm">Selamat datang,</p>
@@ -77,10 +97,9 @@ export default function Dashboard() {
 
       <main className="px-6 space-y-6">
         
-        {/* Card Persiapan Besok (Mirip TugasNih) */}
+        {/* Card Persiapan Besok */}
         <div className="bg-indigo-600 rounded-3xl p-6 text-white shadow-lg shadow-indigo-200 relative overflow-hidden">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-white opacity-10 rounded-full"></div>
-          
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
               <BookOpen size={24} className="text-white" />
@@ -90,15 +109,11 @@ export default function Dashboard() {
               <h2 className="text-lg font-bold">Matematika</h2>
             </div>
           </div>
-          
           <div className="flex items-center gap-4 text-sm text-indigo-100 mt-4 border-t border-white/20 pt-4">
             <div className="flex items-center gap-1.5">
               <Clock size={16} />
               <span>07.00 - 08.30</span>
             </div>
-          </div>
-          <div className="mt-3 bg-white/20 px-3 py-2 rounded-lg text-sm inline-block font-medium">
-            Bawa: Buku LKS, Kalkulator
           </div>
         </div>
 
@@ -113,19 +128,33 @@ export default function Dashboard() {
               <p className="text-sm text-slate-500 text-center py-4">Memuat data...</p>
             ) : tasks.length === 0 ? (
               <div className="bg-white p-6 rounded-2xl border border-slate-100 text-center">
-                <p className="text-sm text-slate-500">Belum ada tugas. Tekan tombol + untuk menambah.</p>
+                <p className="text-sm text-slate-500">Belum ada tugas.</p>
               </div>
             ) : (
               tasks.map((task) => (
-                <div key={task.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-start gap-4 transition-all hover:shadow-md">
-                  <div className="bg-amber-100 p-2.5 rounded-xl text-amber-600">
+                <div 
+                  key={task.id} 
+                  onClick={() => handleToggleStatus(task.id, task.status)}
+                  className={`p-4 rounded-2xl shadow-sm border flex items-start gap-4 transition-all hover:shadow-md cursor-pointer ${
+                    task.status === 'completed' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-white border-slate-100'
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-xl ${
+                    task.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
+                  }`}>
                     <CheckCircle size={20} />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-semibold text-slate-800 text-base">{task.title}</h4>
+                    <h4 className={`font-semibold text-base ${
+                      task.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-800'
+                    }`}>
+                      {task.title}
+                    </h4>
                     <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1.5">
                       <Calendar size={12} /> 
-                      <span>Belum disetel</span>
+                      <span>
+                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : 'Belum disetel'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -133,13 +162,12 @@ export default function Dashboard() {
             )}
           </div>
         </section>
-
       </main>
 
       {/* FAB (Tombol Tambah) */}
       <button 
         onClick={() => setIsModalOpen(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-300 hover:bg-indigo-700 transition-transform hover:scale-105 active:scale-95 z-40"
+        className="fixed bottom-20 right-6 w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-300 hover:bg-indigo-700 transition-transform hover:scale-105 active:scale-95 z-40"
       >
         <Plus size={28} />
       </button>
@@ -155,9 +183,9 @@ export default function Dashboard() {
               </button>
             </div>
             
-            <form onSubmit={handleAddTask} className="space-y-5">
+            <form onSubmit={handleAddTask} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Apa tugasnya?</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Judul Tugas</label>
                 <input 
                   type="text" 
                   value={newTaskTitle}
@@ -167,10 +195,20 @@ export default function Dashboard() {
                   autoFocus
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Tenggat Waktu</label>
+                <input 
+                  type="date" 
+                  value={newTaskDate}
+                  onChange={(e) => setNewTaskDate(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                />
+              </div>
               
               <button 
                 type="submit" 
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-all shadow-md shadow-indigo-200"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-all shadow-md shadow-indigo-200 mt-2"
               >
                 Simpan Tugas
               </button>
